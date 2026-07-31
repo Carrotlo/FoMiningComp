@@ -1,0 +1,19 @@
+name: FoMiningComp
+description: Highly configurable, low-lag mining competition plugin
+version: '${version}'
+main: me.foesio.foMiningComp.FoMiningComp
+api-version: '1.21'
+authors: [ Carrotio ]
+softdepend: [ PlaceholderAPI ]
+
+commands:
+  fominingcomp:
+    description: Main command for FoMiningComp
+    aliases: [ miningcomp ]
+    permission: fominingcomp.admin
+    usage: /<command> help
+
+permissions:
+  fominingcomp.admin:
+    description: Access to all FoMiningComp admin commands
+    default: op

@@ -1,0 +1,33 @@
+# Need help or want support? Join the Discord: https://discord.gg/kEF77QCfu7
+
+settings:
+  auto-start: true
+  initial-delay-seconds: 20
+
+  # Global interval used between every competition.
+  interval-between-competitions-seconds: 300
+
+  # Global toggle controlled from the main editor GUI.
+  broadcast-what-to-mine-enabled: true
+
+  bossbar-title: "{theme}FoMiningComp {muted}| {theme}{name} {muted}- {theme}{time}"
+
+# Chat messages, broadcasts, prompts, and color tokens live in messages.yml.
+
+# Competitions are stored in separate files here:
+# plugins/FoMiningComp/competitions/<competition-id>.yml
+#
+# Example file keys:
+# enabled, display-name, icon, duration-seconds, bossbar-enabled,
+# tracked-materials, disabled-worlds, broadcast.start, broadcast.end, rewards.top-1..top-5
+
+# PlaceholderAPI placeholders (if PlaceholderAPI is installed):
+# %fominingcomp_time_remaining%
+# %fominingcomp_time_until_next%
+# %fominingcomp_active_id%
+# %fominingcomp_active_name%
+# %fominingcomp_next_id%
+# %fominingcomp_status%
+# %fominingcomp_player_score%
+# %fominingcomp_player_rank%
+# %fominingcomp_top_1_player% / %fominingcomp_top_1_score% (also rank 2-5)

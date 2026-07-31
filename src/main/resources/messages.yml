@@ -1,0 +1,57 @@
+# Token guide:
+# {prefix} = plugin prefix from tokens.prefix
+# {theme}  = important text color
+# {muted}  = secondary text color
+# {white}  = neutral text color
+# {good}   = confirm/enabled color
+# {bad}    = deny/disabled color
+# Messages can also use variables like {id}, {name}, {duration}, {winner}, {materials}, etc.
+tokens:
+  prefix: "{theme}FoMiningComp &8» {muted}"
+  theme: "#03fc88"
+  muted: "#a7b8b0"
+  white: "#ffffff"
+  good: "#3ecf8e"
+  bad: "#ff5d73"
+
+messages:
+  no-permission: "{prefix}{bad}You do not have permission."
+  player-only: "{prefix}{bad}Only players can use this command."
+  reload: "{prefix}{good}Configuration reloaded."
+  usage-start: "{prefix}{bad}Usage: {theme}/{label} start <id>"
+  usage-setnext: "{prefix}{bad}Usage: {theme}/{label} setnext <id>"
+  competition-not-found: "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled."
+  competition-started: "{prefix}{good}Started competition {theme}{name}{muted}."
+  competition-stopped: "{prefix}{bad}Stopped the active competition."
+  no-active-competition: "{prefix}{bad}There is no active competition."
+  set-next: "{prefix}{good}Queued {theme}{id}{muted} as next competition."
+  editor-opened: "{prefix}{good}Opened editor."
+  prompt-cancelled: "{prefix}{bad}Editor prompt cancelled."
+  edit-saved: "{prefix}{good}Saved changes for {theme}{id}{muted}."
+  invalid-value: "{prefix}{bad}Invalid value: {theme}{value}"
+  version: "{prefix}{theme}Version {version} {muted}| Author: {theme}Carrotio"
+
+  help-header: "{prefix}{muted}Commands:"
+  help-help: "{prefix}{theme}/fominingcomp help {muted}- Show this help"
+  help-version: "{prefix}{theme}/fominingcomp version {muted}- Show author and plugin version"
+  help-editor: "{prefix}{theme}/fominingcomp editor {muted}- Open GUI editor"
+  help-reload: "{prefix}{theme}/fominingcomp reload {muted}- Reload config and messages"
+  help-start: "{prefix}{theme}/fominingcomp start <id> {muted}- Start competition now"
+  help-stop: "{prefix}{theme}/fominingcomp stop {muted}- Stop active competition"
+  help-setnext: "{prefix}{theme}/fominingcomp setnext <id> {muted}- Force the next competition"
+  help-status: "{prefix}{theme}/fominingcomp status {muted}- Show live status"
+  help-list: "{prefix}{theme}/fominingcomp list {muted}- List all configured competitions"
+
+  status-active: "{prefix}{muted}Active: {theme}{name} {muted}| Remaining: {theme}{remaining}"
+  status-inactive: "{prefix}{muted}No active competition. Next in: {theme}{time} {muted}({theme}{id}{muted})"
+  list-empty: "{prefix}{bad}No competitions configured."
+  list-header: "{prefix}{muted}Configured competitions:"
+  list-entry: "{prefix}{theme}{id} {muted}- {status} {muted}| materials: {theme}{materials}"
+  state-enabled: "{good}enabled"
+  state-disabled: "{bad}disabled"
+
+  broadcast-start: "{prefix}{theme}Competition {name}{muted} started. Time: {theme}{duration}"
+  broadcast-end: "{prefix}{theme}Competition {name}{muted} ended. Winner: {theme}{winner}"
+  broadcast-what-to-mine: "{prefix}{muted}Mine these blocks: {theme}{materials}"
+  broadcast-what-to-mine-toggled: "{prefix}{good}Broadcast what-to-mine is now {state}"
+  leaderboard-entry: "{prefix}{muted}#{rank} {theme}{player} {muted}- {theme}{score}"
