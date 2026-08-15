@@ -17,6 +17,10 @@ import me.foesio.core.editor.EditorItemFactory;
 import me.foesio.core.gui.GuiButtonConfig;
 import me.foesio.core.gui.GuiSlots;
 import me.foesio.core.gui.GuiTitles;
+import me.foesio.core.gui.EntryBrowserClick;
+import me.foesio.core.gui.EntryBrowserHolder;
+import me.foesio.core.gui.EntryBrowserMenus;
+import me.foesio.core.gui.EntryBrowserRequest;
 import me.foesio.core.material.MaterialChooserClick;
 import me.foesio.core.material.MaterialChooserHolder;
 import me.foesio.core.material.MaterialChooserMenus;
@@ -89,79 +93,58 @@ public final class EditorGui implements Listener {
             return false;
         }
         InventoryHolder holder = inventory.getHolder();
-        return holder instanceof EditorListHolder || holder instanceof CompetitionEditHolder;
+        return holder instanceof EntryBrowserHolder || holder instanceof CompetitionEditHolder;
     }
 
     public void openMainEditor(Player player) {
-        EditorListHolder holder = new EditorListHolder();
-        Inventory inventory = Bukkit.createInventory(holder, MAIN_EDITOR_SIZE, GuiTitles.format("FoMiningComp Editor"));
-        holder.inventory = inventory;
+        openMainEditor(player, "", 0);
+    }
 
-        fillBackground(inventory, MAIN_EDITOR_ROWS);
-
+    private void openMainEditor(Player player, String filter, int page) {
+        String normalizedFilter = filter == null ? "" : filter.trim().toLowerCase(Locale.ROOT);
         List<CompetitionConfig> competitions = new ArrayList<>(manager.competitions());
         competitions.sort(Comparator.comparing(CompetitionConfig::id));
-
-        int slot = 10;
+        List<EntryBrowserRequest.Entry> entries = new ArrayList<>();
         for (CompetitionConfig competition : competitions) {
-            if (slot >= 44) {
-                break;
+            if (!matchesFilter(competition.id() + " " + competition.displayName(), normalizedFilter)) {
+                continue;
             }
-            if (slot % 9 == 8) {
-                slot += 2;
-            }
-
-            List<String> lore = List.of(
-                "&fID: " + competition.id(),
-                "&fStatus: " + (competition.enabled() ? FoText.color(FoStyle.GOOD + "enabled") : FoText.color(FoStyle.BAD + "disabled")),
-                "&fDuration: " + competition.durationSeconds() + "s",
-                "&fTracked blocks: " + competition.trackedMaterials().size(),
-                "",
-                "&fClick to edit"
-            );
-
-            ItemStack button = actionItem(
-                competition.icon(),
-                FoStyle.THEME + competition.displayName(),
-                lore,
-                "open_competition",
+            entries.add(EntryBrowserRequest.Entry.of(
                 competition.id(),
-                0
-            );
-            inventory.setItem(slot, button);
-            slot++;
+                actionItem(
+                    competition.icon(),
+                    FoStyle.THEME + competition.displayName(),
+                    List.of(
+                        "&fID: " + competition.id(),
+                        "&fStatus: " + (competition.enabled() ? FoStyle.GOOD + "enabled" : FoStyle.BAD + "disabled"),
+                        "&fDuration: " + competition.durationSeconds() + "s",
+                        "&fTracked blocks: " + competition.trackedMaterials().size(),
+                        "",
+                        "&fClick to edit"
+                    ),
+                    "open_competition", competition.id(), 0
+                )
+            ));
         }
-
-        inventory.setItem(
-            48,
-            actionItem(
+        EntryBrowserMenus.open(player, EntryBrowserRequest.builder()
+            .title("FoMiningComp Editor")
+            .entries(entries)
+            .page(page)
+            .filter(normalizedFilter)
+            .buttons(BUTTONS)
+            .extraButton(actionItem(
                 toggleMaterial(manager.broadcastWhatToMineEnabled()),
                 FoStyle.THEME + "Broadcast What To Mine",
-                List.of(
-                    "&fGlobal setting",
-                    "&fCurrent: " + (manager.broadcastWhatToMineEnabled() ? "enabled" : "disabled"),
-                    "",
-                    "&fClick to toggle."
-                ),
-                "toggle_broadcast_what_to_mine",
-                "",
-                0
-            )
-        );
+                List.of("&fGlobal setting", "&fCurrent: " + (manager.broadcastWhatToMineEnabled() ? "enabled" : "disabled"), "", "&fClick to toggle."),
+                "toggle_broadcast_what_to_mine", "", 0
+            ))
+            .addButton(actionItem(Material.ANVIL, FoStyle.GOOD + "Create Competition",
+                List.of("&fCreate a new competition entry.", "&fClick to enter a new ID."), "create_competition", "", 0))
+            .build());
+    }
 
-        inventory.setItem(
-            49,
-            actionItem(
-                Material.LIME_DYE,
-                FoStyle.GOOD + "Create Competition",
-                List.of("&fCreate a new competition entry.", "&fClick to enter a new ID."),
-                "create_competition",
-                "",
-                0
-            )
-        );
-
-        player.openInventory(inventory);
+    private boolean matchesFilter(String value, String filter) {
+        return filter == null || filter.isBlank() || value.toLowerCase(Locale.ROOT).contains(filter);
     }
 
     private void openCompetitionEditor(Player player, String id) {
@@ -552,7 +535,12 @@ public final class EditorGui implements Listener {
             handleWorldSelectorClick(player, event.getRawSlot(), selectionHolder);
             return;
         }
-        if (!(holder instanceof EditorListHolder) && !(holder instanceof CompetitionEditHolder)) {
+        if (holder instanceof EntryBrowserHolder entryBrowserHolder) {
+            event.setCancelled(true);
+            handleEntryBrowserClick(player, event.getRawSlot(), entryBrowserHolder);
+            return;
+        }
+        if (!(holder instanceof CompetitionEditHolder)) {
             return;
         }
 
@@ -645,6 +633,41 @@ public final class EditorGui implements Listener {
             default -> {
             }
         }
+    }
+
+    private void handleEntryBrowserClick(Player player, int rawSlot, EntryBrowserHolder holder) {
+        EntryBrowserClick click = EntryBrowserMenus.handleClick(rawSlot, holder);
+        String filter = holder.request().filter();
+        switch (click.action()) {
+            case ENTRY -> openCompetitionEditor(player, click.entryId());
+            case ADD -> beginPrompt(player, new PromptState(PromptType.CREATE_COMPETITION, null, 0));
+            case EXTRA -> {
+                manager.setBroadcastWhatToMineEnabled(!manager.broadcastWhatToMineEnabled());
+                String state = manager.broadcastWhatToMineEnabled()
+                    ? messages.render("messages.state-enabled", "{good}enabled")
+                    : messages.render("messages.state-disabled", "{bad}disabled");
+                messages.send(player, "messages.broadcast-what-to-mine-toggled", "{prefix}{good}Broadcast what-to-mine is now {state}", Map.of("state", state));
+                openMainEditor(player, filter, holder.request().page());
+            }
+            case SEARCH -> beginCompetitionSearch(player, holder);
+            case CLEAR_SEARCH -> openMainEditor(player, "", 0);
+            case PREVIOUS_PAGE -> openMainEditor(player, filter, holder.request().page() - 1);
+            case NEXT_PAGE -> openMainEditor(player, filter, holder.request().page() + 1);
+            case BACK, NONE -> {
+            }
+        }
+    }
+
+    private void beginCompetitionSearch(Player player, EntryBrowserHolder holder) {
+        EditorDialogInputs.openTextFromInventory(
+            plugin,
+            plugin.core().inventoryCloseSuppressor(),
+            plugin.core().dialogService(),
+            player,
+            selectorSearchRequest("Enter a competition filter.", holder.request().filter()),
+            filter -> openMainEditor(player, filter, 0),
+            () -> openMainEditor(player, holder.request().filter(), holder.request().page())
+        );
     }
 
     @EventHandler
