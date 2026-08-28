@@ -37,6 +37,7 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!sender.hasPermission(ADMIN_PERMISSION)) {
             messages.send(sender, "messages.no-permission", "{prefix}{bad}You do not have permission.");
+            plugin.adminSounds().updateError(sender);
             return true;
         }
 
@@ -52,15 +53,21 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
                 updateNotices.checkAndSendVersion(sender);
                 return true;
             }
-            case "reload" -> {
-                FoReloadResult result = plugin.reloadPluginResources();
-                if (!result.successful()) {
+                case "reload" -> {
+                    FoReloadResult result = plugin.reloadPluginResources();
+                    if (!result.successful()) {
+                        if (sender instanceof Player player) {
+                            plugin.adminSounds().reloadError(player);
+                        }
                     messages.sendTemplate(sender, "{prefix}{bad}Reload failed at {theme}{step}{bad}: {muted}{error}", Map.of(
                         "step", result.failedStep(),
                         "error", result.errorMessage()
                     ));
                     return true;
-                }
+                    }
+                    if (sender instanceof Player player) {
+                        plugin.adminSounds().reload(player);
+                    }
                 messages.send(sender, "messages.reload", "{prefix}{good}Configuration reloaded.");
                 return true;
             }
@@ -76,11 +83,13 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
             case "start" -> {
                 if (args.length < 2) {
                     messages.send(sender, "messages.usage-start", "{prefix}{bad}Usage: {theme}/{label} start <id>", Map.of("label", label));
+                    plugin.adminSounds().updateError(sender);
                     return true;
                 }
 
                 String id = args[1];
                 if (!manager.startCompetition(id, sender)) {
+                    plugin.adminSounds().updateError(sender);
                     messages.send(sender, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", id));
                 }
                 return true;
@@ -92,16 +101,21 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
             case "setnext" -> {
                 if (args.length < 2) {
                     messages.send(sender, "messages.usage-setnext", "{prefix}{bad}Usage: {theme}/{label} setnext <id>", Map.of("label", label));
+                    plugin.adminSounds().updateError(sender);
                     return true;
                 }
 
                 String id = args[1];
                 if (!manager.queueNext(id)) {
+                    plugin.adminSounds().updateError(sender);
                     messages.send(sender, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", id));
                     return true;
                 }
 
                 messages.send(sender, "messages.set-next", "{prefix}{good}Queued {theme}{id}{muted} as next competition.", Map.of("id", id));
+                if (sender instanceof Player player) {
+                    plugin.sounds().play(player, "competition.queued");
+                }
                 return true;
             }
             case "status" -> {
@@ -114,6 +128,7 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
             }
             default -> {
                 sendHelp(sender);
+                plugin.adminSounds().updateError(sender);
                 return true;
             }
         }

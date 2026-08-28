@@ -15,6 +15,9 @@ import me.foesio.core.message.FoMessageMigrations;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.reload.FoReloadRegistry;
 import me.foesio.core.reload.FoReloadResult;
+import me.foesio.core.sound.FoAdminSounds;
+import me.foesio.core.sound.FoEditorSounds;
+import me.foesio.core.sound.FoSoundService;
 import me.foesio.core.update.UpdateNoticeService;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
@@ -34,6 +37,9 @@ public final class FoMiningComp extends JavaPlugin {
     private EditorGui editorGui;
     private UpdateNoticeService updateNotices;
     private CommandVisibilityService commandVisibility;
+    private FoSoundService sounds;
+    private FoAdminSounds adminSounds;
+    private FoEditorSounds editorSounds;
 
     @Override
     public void onEnable() {
@@ -43,8 +49,8 @@ public final class FoMiningComp extends JavaPlugin {
         refreshCoreContext();
         messages = FoMessageService.load(this, messageMigrations());
         competitionManager = new CompetitionManager(this, messages);
-        editorGui = new EditorGui(this, messages, competitionManager);
-        updateNotices = core.createUpdateNotices(messages, MODRINTH_PROJECT_ID).start();
+        editorGui = new EditorGui(this, messages, competitionManager, editorSounds);
+        updateNotices = core.createUpdateNotices(messages, MODRINTH_PROJECT_ID, adminSounds).start();
 
         competitionManager.loadFromConfig();
 
@@ -81,11 +87,24 @@ public final class FoMiningComp extends JavaPlugin {
         return core;
     }
 
+    public FoEditorSounds editorSounds() {
+        return editorSounds;
+    }
+
+    public FoAdminSounds adminSounds() {
+        return adminSounds;
+    }
+
+    public FoSoundService sounds() {
+        return sounds;
+    }
+
     public FoReloadResult reloadPluginResources() {
         return FoReloadRegistry.create()
             .addConfig(this)
             .add("config-defaults", this::ensureConfigDefaults)
             .add("core", this::refreshCoreContext)
+            .add("sounds", sounds::reload)
             .addMessages(messages)
             .add("competitions", competitionManager::loadFromConfig)
             .reload();
@@ -156,6 +175,13 @@ public final class FoMiningComp extends JavaPlugin {
         core = FoPluginCore.create(this);
         core.warnIfNativeDialogsUnavailable();
         core.metrics(BSTATS_PLUGIN_ID);
+        if (sounds == null) {
+            sounds = core.createSounds();
+            adminSounds = FoAdminSounds.create(sounds);
+            editorSounds = FoEditorSounds.create(sounds);
+        } else {
+            sounds.reload();
+        }
     }
 
     private FoMessageMigrations messageMigrations() {

@@ -10,7 +10,6 @@ commands:
   fominingcomp:
     description: Main command for FoMiningComp
     aliases: [ miningcomp ]
-    permission: fominingcomp.admin
     usage: /<command> help
 
 permissions:

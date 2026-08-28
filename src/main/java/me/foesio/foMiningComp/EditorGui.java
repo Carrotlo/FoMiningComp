@@ -30,6 +30,7 @@ import me.foesio.core.material.MaterialSelections;
 import me.foesio.core.material.MaterialTypes;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.message.FoStyle;
+import me.foesio.core.sound.FoEditorSounds;
 import me.foesio.core.number.LargeNumberParser;
 import me.foesio.core.selector.TriStateSelectionClick;
 import me.foesio.core.selector.TriStateSelectionHolder;
@@ -70,6 +71,7 @@ public final class EditorGui implements Listener {
     private final FoMiningComp plugin;
     private final FoMessageService messages;
     private final CompetitionManager manager;
+    private final FoEditorSounds sounds;
 
     private final NamespacedKey actionKey;
     private final NamespacedKey competitionKey;
@@ -77,10 +79,11 @@ public final class EditorGui implements Listener {
     private final Map<UUID, String> materialSelectors;
     private final Map<UUID, String> worldSelectors;
 
-    public EditorGui(FoMiningComp plugin, FoMessageService messages, CompetitionManager manager) {
+    public EditorGui(FoMiningComp plugin, FoMessageService messages, CompetitionManager manager, FoEditorSounds sounds) {
         this.plugin = plugin;
         this.messages = messages;
         this.manager = manager;
+        this.sounds = sounds;
         this.actionKey = new NamespacedKey(plugin, "editor_action");
         this.competitionKey = new NamespacedKey(plugin, "editor_competition");
         this.rankKey = new NamespacedKey(plugin, "editor_rank");
@@ -97,6 +100,7 @@ public final class EditorGui implements Listener {
     }
 
     public void openMainEditor(Player player) {
+        sounds.open(player);
         openMainEditor(player, "", 0);
     }
 
@@ -148,10 +152,18 @@ public final class EditorGui implements Listener {
     }
 
     private void openCompetitionEditor(Player player, String id) {
+        openCompetitionEditor(player, id, true);
+    }
+
+    private void openCompetitionEditor(Player player, String id, boolean playOpenSound) {
         CompetitionConfig competition = manager.competition(id);
         if (competition == null) {
+            sounds.error(player);
             messages.send(player, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", id));
             return;
+        }
+        if (playOpenSound) {
+            sounds.open(player);
         }
 
         CompetitionEditHolder holder = new CompetitionEditHolder(id);
@@ -330,16 +342,19 @@ public final class EditorGui implements Listener {
     private void openTrackedMaterialsSelector(Player player, String competitionId) {
         CompetitionConfig competition = manager.competition(competitionId);
         if (competition == null) {
+            sounds.error(player);
             messages.send(player, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", competitionId));
             return;
         }
 
+        sounds.open(player);
         openTrackedMaterialsSelector(player, competition.id(), trackedMaterialsRequest(competition, 0, ""));
     }
 
     private void openTrackedMaterialsSelector(Player player, String competitionId, MaterialChooserRequest request) {
         CompetitionConfig competition = manager.competition(competitionId);
         if (competition == null) {
+            sounds.error(player);
             messages.send(player, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", competitionId));
             return;
         }
@@ -366,16 +381,19 @@ public final class EditorGui implements Listener {
     private void openDisabledWorldSelector(Player player, String competitionId) {
         CompetitionConfig competition = manager.competition(competitionId);
         if (competition == null) {
+            sounds.error(player);
             messages.send(player, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", competitionId));
             return;
         }
 
+        sounds.open(player);
         openDisabledWorldSelector(player, competition.id(), disabledWorldsRequest(competition, 0, ""));
     }
 
     private void openDisabledWorldSelector(Player player, String competitionId, TriStateSelectionRequest request) {
         CompetitionConfig competition = manager.competition(competitionId);
         if (competition == null) {
+            sounds.error(player);
             messages.send(player, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", competitionId));
             return;
         }
@@ -423,27 +441,39 @@ public final class EditorGui implements Listener {
     }
 
     private void beginMaterialSearch(Player player, String competitionId, MaterialChooserRequest request) {
-        EditorDialogInputs.openTextFromInventory(
+        boolean openedNative = EditorDialogInputs.openTextFromInventory(
             plugin,
             plugin.core().inventoryCloseSuppressor(),
             plugin.core().dialogService(),
             player,
             selectorSearchRequest("Enter a block filter.", request.filter()),
             filter -> openTrackedMaterialsSelector(player, competitionId, request.withFilter(filter)),
-            () -> openTrackedMaterialsSelector(player, competitionId, request)
+            () -> {
+                sounds.back(player);
+                openTrackedMaterialsSelector(player, competitionId, request);
+            }
         );
+        if (openedNative) {
+            sounds.open(player);
+        }
     }
 
     private void beginWorldSearch(Player player, String competitionId, TriStateSelectionRequest request) {
-        EditorDialogInputs.openTextFromInventory(
+        boolean openedNative = EditorDialogInputs.openTextFromInventory(
             plugin,
             plugin.core().inventoryCloseSuppressor(),
             plugin.core().dialogService(),
             player,
             selectorSearchRequest("Enter a world filter.", request.filter()),
             filter -> openDisabledWorldSelector(player, competitionId, request.withFilter(filter)),
-            () -> openDisabledWorldSelector(player, competitionId, request)
+            () -> {
+                sounds.back(player);
+                openDisabledWorldSelector(player, competitionId, request);
+            }
         );
+        if (openedNative) {
+            sounds.open(player);
+        }
     }
 
     private void handleMaterialSelectorClick(Player player, int rawSlot, MaterialChooserHolder holder) {
@@ -456,22 +486,29 @@ public final class EditorGui implements Listener {
         MaterialChooserClick click = MaterialChooserMenus.handleClick(rawSlot, holder);
         MaterialChooserRequest request = holder.request();
         switch (click.action()) {
-            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> openTrackedMaterialsSelector(player, competitionId, click.nextRequest());
-            case SEARCH -> beginMaterialSearch(player, competitionId, request);
+            case PREVIOUS_PAGE -> { sounds.previousPage(player); openTrackedMaterialsSelector(player, competitionId, click.nextRequest()); }
+            case NEXT_PAGE -> { sounds.nextPage(player); openTrackedMaterialsSelector(player, competitionId, click.nextRequest()); }
+            case CLEAR_SEARCH -> { sounds.clearSearch(player); openTrackedMaterialsSelector(player, competitionId, click.nextRequest()); }
+            case SEARCH -> { sounds.search(player); beginMaterialSearch(player, competitionId, request); }
             case BACK -> {
+                sounds.back(player);
                 materialSelectors.remove(player.getUniqueId());
-                openCompetitionEditor(player, competitionId);
+                openCompetitionEditor(player, competitionId, false);
             }
             case TOGGLE -> {
                 Set<Material> selected = MaterialSelections.toggled(request.selectedMaterials(), click.material());
                 if (selected.isEmpty()) {
+                    sounds.error(player);
                     messages.send(player, "messages.invalid-value", "{prefix}{bad}Invalid value: {theme}{value}", Map.of("value", "at least one tracked block"));
                     openTrackedMaterialsSelector(player, competitionId, request);
                     return;
                 }
                 if (manager.setTrackedMaterials(competitionId, selected)) {
+                    sounds.cycle(player);
                     messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competitionId));
                     openTrackedMaterialsSelector(player, competitionId, request.withSelectedMaterials(selected));
+                } else {
+                    sounds.error(player);
                 }
             }
             case NONE, SELECT -> {
@@ -489,20 +526,26 @@ public final class EditorGui implements Listener {
         TriStateSelectionClick click = TriStateSelectionMenus.handleClick(rawSlot, holder);
         TriStateSelectionRequest request = holder.request();
         switch (click.action()) {
-            case PREVIOUS_PAGE, NEXT_PAGE, CLEAR_SEARCH -> openDisabledWorldSelector(player, competitionId, click.nextRequest());
-            case SEARCH -> beginWorldSearch(player, competitionId, request);
+            case PREVIOUS_PAGE -> { sounds.previousPage(player); openDisabledWorldSelector(player, competitionId, click.nextRequest()); }
+            case NEXT_PAGE -> { sounds.nextPage(player); openDisabledWorldSelector(player, competitionId, click.nextRequest()); }
+            case CLEAR_SEARCH -> { sounds.clearSearch(player); openDisabledWorldSelector(player, competitionId, click.nextRequest()); }
+            case SEARCH -> { sounds.search(player); beginWorldSearch(player, competitionId, request); }
             case BACK -> {
+                sounds.back(player);
                 worldSelectors.remove(player.getUniqueId());
-                openCompetitionEditor(player, competitionId);
+                openCompetitionEditor(player, competitionId, false);
             }
             case TOGGLE -> {
                 Set<String> disabledWorlds = TriStateSelections.disabledKeys(click.nextRequest()).stream()
                     .map(world -> world.toLowerCase(Locale.ROOT))
                     .collect(Collectors.toCollection(HashSet::new));
                 if (manager.setDisabledWorlds(competitionId, disabledWorlds)) {
+                    sounds.cycle(player);
                     messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competitionId));
                     CompetitionConfig updated = manager.competition(competitionId);
                     openDisabledWorldSelector(player, competitionId, disabledWorldsRequest(updated, click.page(), click.filter()));
+                } else {
+                    sounds.error(player);
                 }
             }
             case NONE -> {
@@ -572,44 +615,77 @@ public final class EditorGui implements Listener {
                 new PromptState(PromptType.CREATE_COMPETITION, null, 0)
             );
             case "toggle_broadcast_what_to_mine" -> {
-                manager.setBroadcastWhatToMineEnabled(!manager.broadcastWhatToMineEnabled());
-                String state = manager.broadcastWhatToMineEnabled()
+                boolean enabled = !manager.broadcastWhatToMineEnabled();
+                manager.setBroadcastWhatToMineEnabled(enabled);
+                sounds.toggle(player, enabled);
+                String state = enabled
                     ? messages.render("messages.state-enabled", "{good}enabled")
                     : messages.render("messages.state-disabled", "{bad}disabled");
                 messages.send(player, "messages.broadcast-what-to-mine-toggled", "{prefix}{good}Broadcast what-to-mine is now {state}", Map.of("state", state));
-                openMainEditor(player);
+                openMainEditor(player, "", 0);
             }
-            case "back_to_list" -> openMainEditor(player);
+            case "back_to_list" -> {
+                sounds.back(player);
+                openMainEditor(player, "", 0);
+            }
             case "toggle_enabled" -> {
                 CompetitionConfig competition = manager.competition(competitionId);
                 if (competition != null) {
-                    manager.setEnabled(competition.id(), !competition.enabled());
-                    messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
-                    openCompetitionEditor(player, competition.id());
+                    boolean enabled = !competition.enabled();
+                    if (manager.setEnabled(competition.id(), enabled)) {
+                        sounds.toggle(player, enabled);
+                        messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
+                        openCompetitionEditor(player, competition.id(), false);
+                    } else {
+                        sounds.error(player);
+                    }
+                } else {
+                    sounds.error(player);
                 }
             }
             case "toggle_announce_start" -> {
                 CompetitionConfig competition = manager.competition(competitionId);
                 if (competition != null) {
-                    manager.setAnnounceStart(competition.id(), !competition.announceStart());
-                    messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
-                    openCompetitionEditor(player, competition.id());
+                    boolean enabled = !competition.announceStart();
+                    if (manager.setAnnounceStart(competition.id(), enabled)) {
+                        sounds.toggle(player, enabled);
+                        messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
+                        openCompetitionEditor(player, competition.id(), false);
+                    } else {
+                        sounds.error(player);
+                    }
+                } else {
+                    sounds.error(player);
                 }
             }
             case "toggle_announce_end" -> {
                 CompetitionConfig competition = manager.competition(competitionId);
                 if (competition != null) {
-                    manager.setAnnounceEnd(competition.id(), !competition.announceEnd());
-                    messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
-                    openCompetitionEditor(player, competition.id());
+                    boolean enabled = !competition.announceEnd();
+                    if (manager.setAnnounceEnd(competition.id(), enabled)) {
+                        sounds.toggle(player, enabled);
+                        messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
+                        openCompetitionEditor(player, competition.id(), false);
+                    } else {
+                        sounds.error(player);
+                    }
+                } else {
+                    sounds.error(player);
                 }
             }
             case "toggle_bossbar" -> {
                 CompetitionConfig competition = manager.competition(competitionId);
                 if (competition != null) {
-                    manager.setBossbarEnabled(competition.id(), !competition.bossbarEnabled());
-                    messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
-                    openCompetitionEditor(player, competition.id());
+                    boolean enabled = !competition.bossbarEnabled();
+                    if (manager.setBossbarEnabled(competition.id(), enabled)) {
+                        sounds.toggle(player, enabled);
+                        messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competition.id()));
+                        openCompetitionEditor(player, competition.id(), false);
+                    } else {
+                        sounds.error(player);
+                    }
+                } else {
+                    sounds.error(player);
                 }
             }
             case "prompt_name" -> beginPrompt(
@@ -642,32 +718,40 @@ public final class EditorGui implements Listener {
             case ENTRY -> openCompetitionEditor(player, click.entryId());
             case ADD -> beginPrompt(player, new PromptState(PromptType.CREATE_COMPETITION, null, 0));
             case EXTRA -> {
-                manager.setBroadcastWhatToMineEnabled(!manager.broadcastWhatToMineEnabled());
-                String state = manager.broadcastWhatToMineEnabled()
+                boolean enabled = !manager.broadcastWhatToMineEnabled();
+                manager.setBroadcastWhatToMineEnabled(enabled);
+                sounds.toggle(player, enabled);
+                String state = enabled
                     ? messages.render("messages.state-enabled", "{good}enabled")
                     : messages.render("messages.state-disabled", "{bad}disabled");
                 messages.send(player, "messages.broadcast-what-to-mine-toggled", "{prefix}{good}Broadcast what-to-mine is now {state}", Map.of("state", state));
                 openMainEditor(player, filter, holder.request().page());
             }
-            case SEARCH -> beginCompetitionSearch(player, holder);
-            case CLEAR_SEARCH -> openMainEditor(player, "", 0);
-            case PREVIOUS_PAGE -> openMainEditor(player, filter, holder.request().page() - 1);
-            case NEXT_PAGE -> openMainEditor(player, filter, holder.request().page() + 1);
-            case BACK, NONE -> {
-            }
+            case SEARCH -> { sounds.search(player); beginCompetitionSearch(player, holder); }
+            case CLEAR_SEARCH -> { sounds.clearSearch(player); openMainEditor(player, "", 0); }
+            case PREVIOUS_PAGE -> { sounds.previousPage(player); openMainEditor(player, filter, holder.request().page() - 1); }
+            case NEXT_PAGE -> { sounds.nextPage(player); openMainEditor(player, filter, holder.request().page() + 1); }
+            case BACK -> { }
+            case NONE -> { }
         }
     }
 
     private void beginCompetitionSearch(Player player, EntryBrowserHolder holder) {
-        EditorDialogInputs.openTextFromInventory(
+        boolean openedNative = EditorDialogInputs.openTextFromInventory(
             plugin,
             plugin.core().inventoryCloseSuppressor(),
             plugin.core().dialogService(),
             player,
             selectorSearchRequest("Enter a competition filter.", holder.request().filter()),
             filter -> openMainEditor(player, filter, 0),
-            () -> openMainEditor(player, holder.request().filter(), holder.request().page())
+            () -> {
+                sounds.back(player);
+                openMainEditor(player, holder.request().filter(), holder.request().page());
+            }
         );
+        if (openedNative) {
+            sounds.open(player);
+        }
     }
 
     @EventHandler
@@ -686,6 +770,7 @@ public final class EditorGui implements Listener {
 
     private void handlePrompt(Player player, PromptState state, String input, boolean reopenOnInvalid) {
         if (input.equalsIgnoreCase("cancel")) {
+            sounds.back(player);
             messages.send(player, "messages.prompt-cancelled", "{prefix}{bad}Editor prompt cancelled.");
             reopenPromptOrigin(player, state);
             return;
@@ -696,9 +781,11 @@ public final class EditorGui implements Listener {
             case CREATE_COMPETITION -> {
                 success = manager.createCompetition(input.trim());
                 if (success) {
+                    sounds.add(player);
                     messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", input.trim()));
-                    openCompetitionEditor(player, input.trim());
+                    openCompetitionEditor(player, input.trim(), false);
                 } else {
+                    sounds.error(player);
                     messages.send(player, "messages.invalid-value", "{prefix}{bad}Invalid value: {theme}{value}", Map.of("value", input));
                     if (reopenOnInvalid) {
                         reopenPromptOrigin(player, state);
@@ -729,18 +816,20 @@ public final class EditorGui implements Listener {
 
     private void finishEdit(Player player, String competitionId, boolean success, String originalInput, boolean reopenOnInvalid) {
         if (success) {
+            sounds.save(player);
             messages.send(player, "messages.edit-saved", "{prefix}{good}Saved changes for {theme}{id}{muted}.", Map.of("id", competitionId));
-            openCompetitionEditor(player, competitionId);
+            openCompetitionEditor(player, competitionId, false);
         } else {
+            sounds.error(player);
             messages.send(player, "messages.invalid-value", "{prefix}{bad}Invalid value: {theme}{value}", Map.of("value", originalInput));
             if (reopenOnInvalid) {
-                openCompetitionEditor(player, competitionId);
+                openCompetitionEditor(player, competitionId, false);
             }
         }
     }
 
     private void beginPrompt(Player player, PromptState state) {
-        EditorDialogInputs.openTextFromInventory(
+        boolean openedNative = EditorDialogInputs.openTextFromInventory(
             plugin,
             plugin.core().inventoryCloseSuppressor(),
             plugin.core().dialogService(),
@@ -748,10 +837,14 @@ public final class EditorGui implements Listener {
             inputRequest(state),
             input -> handlePrompt(player, state, input, true),
             () -> {
+                sounds.back(player);
                 messages.send(player, "messages.prompt-cancelled", "{prefix}{bad}Editor prompt cancelled.");
                 reopenPromptOrigin(player, state);
             }
         );
+        if (openedNative) {
+            sounds.open(player);
+        }
     }
 
     private TextDialogRequest inputRequest(PromptState state) {
@@ -824,10 +917,10 @@ public final class EditorGui implements Listener {
 
     private void reopenPromptOrigin(Player player, PromptState state) {
         if (state.competitionId() == null || state.type() == PromptType.CREATE_COMPETITION) {
-            openMainEditor(player);
+            openMainEditor(player, "", 0);
             return;
         }
-        openCompetitionEditor(player, state.competitionId());
+        openCompetitionEditor(player, state.competitionId(), false);
     }
 
     private void fillBackground(Inventory inventory, int rows) {

@@ -188,6 +188,9 @@ public final class CompetitionManager implements Listener {
         if (sender != null) {
             messages.send(sender, "messages.competition-started", "{prefix}{good}Started competition {theme}{name}{muted}.", Map.of("name", config.displayName()));
         }
+        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+            plugin.sounds().play(player, "competition.start");
+        }
         return true;
     }
 
@@ -521,6 +524,7 @@ public final class CompetitionManager implements Listener {
     private boolean endActiveCompetition(boolean manual, CommandSender sender) {
         if (activeCompetition == null) {
             if (sender != null) {
+                plugin.adminSounds().updateError(sender);
                 messages.send(sender, "messages.no-active-competition", "{prefix}{bad}There is no active competition.");
             }
             return false;
@@ -557,6 +561,15 @@ public final class CompetitionManager implements Listener {
         }
 
         executeRewards(finished.config, results);
+        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+            plugin.sounds().play(player, "competition.end");
+        }
+        for (ResultEntry result : results) {
+            org.bukkit.entity.Player winner = Bukkit.getPlayer(result.uuid());
+            if (winner != null) {
+                plugin.sounds().play(winner, "competition.reward");
+            }
+        }
 
         if (autoStart) {
             scheduledNextCompetitionId = chooseNextCompetitionId();
