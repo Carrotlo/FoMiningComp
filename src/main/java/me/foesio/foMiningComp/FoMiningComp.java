@@ -48,6 +48,7 @@ public final class FoMiningComp extends JavaPlugin {
 
         refreshCoreContext();
         messages = FoMessageService.load(this, messageMigrations());
+        migrateSprites();
         competitionManager = new CompetitionManager(this, messages);
         editorGui = new EditorGui(this, messages, competitionManager, editorSounds);
         updateNotices = core.createUpdateNotices(messages, MODRINTH_PROJECT_ID, adminSounds).start();
@@ -189,6 +190,53 @@ public final class FoMiningComp extends JavaPlugin {
             .add(this::migrateLegacyConfigMessages)
             .add(this::resaveWrappedMessages)
             .build();
+    }
+
+    private void migrateSprites() {
+        messages.migrateToVersion(core.migrations(), 1, config -> {
+            boolean changed = false;
+            changed |= FoMessageService.addMissingToken(config, "tokens.prefix", ":diamond_pickaxe:", null);
+            changed |= FoMessageService.addMissingToken(config, "messages.reload", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "messages.competition-started", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "messages.competition-stopped", ":redstone:");
+            changed |= FoMessageService.addMissingToken(config, "messages.set-next", ":clock:");
+            changed |= FoMessageService.addMissingToken(config, "messages.editor-opened", ":book:");
+            changed |= FoMessageService.addMissingToken(config, "messages.edit-saved", ":emerald:");
+            changed |= FoMessageService.addMissingToken(config, "messages.invalid-value", ":redstone:");
+            changed |= FoMessageService.addMissingToken(config, "messages.broadcast-start", ":diamond_pickaxe:");
+            changed |= FoMessageService.addMissingToken(config, "messages.broadcast-end", ":emerald:");
+            return true;
+        });
+        messages.migrateToVersion(core.migrations(), 2, config -> {
+            String oldTitle = "{theme}FoMiningComp {muted}| {theme}{name} {muted}- {theme}{time}";
+            if (!oldTitle.equals(getConfig().getString("settings.bossbar-title"))) {
+                return true;
+            }
+            getConfig().set("settings.bossbar-title", ":diamond_pickaxe: " + oldTitle);
+            saveConfig();
+            return true;
+        });
+        messages.migrateToVersion(core.migrations(), 3, config -> {
+            replaceExactMessage(
+                config,
+                "messages.broadcast-start",
+                "{prefix}:diamond_pickaxe: {theme}Competition {name}{muted} started. Time: {theme}{duration}",
+                "{prefix}{theme}Competition {name}{muted} started. Time: {theme}{duration}"
+            );
+            replaceExactMessage(
+                config,
+                "messages.broadcast-end",
+                "{prefix}:emerald: {theme}Competition {name}{muted} ended. Winner: {theme}{winner}",
+                "{prefix}{theme}Competition {name}{muted} ended. Winner: {theme}{winner}"
+            );
+            return true;
+        });
+    }
+
+    private void replaceExactMessage(FileConfiguration config, String path, String oldValue, String newValue) {
+        if (oldValue.equals(config.getString(path))) {
+            config.set(path, newValue);
+        }
     }
 
     private boolean migrateLegacyConfigMessages(FileConfiguration messagesConfig) {

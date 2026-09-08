@@ -10,7 +10,7 @@ settings:
   # Global toggle controlled from the main editor GUI.
   broadcast-what-to-mine-enabled: true
 
-  bossbar-title: "{theme}FoMiningComp {muted}| {theme}{name} {muted}- {theme}{time}"
+  bossbar-title: ":diamond_pickaxe: {theme}FoMiningComp {muted}| {theme}{name} {muted}- {theme}{time}"
 
 # Chat messages, broadcasts, prompts, and color tokens live in messages.yml.
 

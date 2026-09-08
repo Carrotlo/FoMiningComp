@@ -49,7 +49,6 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
         String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "version" -> {
-                messages.send(sender, "messages.version", "{prefix}{theme}Version {version} {muted}| Author: {theme}Carrotio", Map.of("version", plugin.getDescription().getVersion()));
                 updateNotices.checkAndSendVersion(sender);
                 return true;
             }

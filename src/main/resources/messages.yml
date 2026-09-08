@@ -1,3 +1,5 @@
+# Edit optional item icons here. Remove any :icon: token to hide it.
+# Unsupported servers, older Java clients, and Bedrock players automatically receive clean text without item sprites.
 # Token guide:
 # {prefix} = plugin prefix from tokens.prefix
 # {theme}  = important text color
@@ -7,7 +9,7 @@
 # {bad}    = deny/disabled color
 # Messages can also use variables like {id}, {name}, {duration}, {winner}, {materials}, etc.
 tokens:
-  prefix: "{theme}FoMiningComp &8» {muted}"
+  prefix: ":diamond_pickaxe: {theme}FoMiningComp &8» {muted}"
   theme: "#03fc88"
   muted: "#a7b8b0"
   white: "#ffffff"
@@ -17,23 +19,22 @@ tokens:
 messages:
   no-permission: "{prefix}{bad}You do not have permission."
   player-only: "{prefix}{bad}Only players can use this command."
-  reload: "{prefix}{good}Configuration reloaded."
+  reload: "{prefix}:emerald: {good}Configuration reloaded."
   usage-start: "{prefix}{bad}Usage: {theme}/{label} start <id>"
   usage-setnext: "{prefix}{bad}Usage: {theme}/{label} setnext <id>"
   competition-not-found: "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled."
-  competition-started: "{prefix}{good}Started competition {theme}{name}{muted}."
-  competition-stopped: "{prefix}{bad}Stopped the active competition."
+  competition-started: "{prefix}:diamond_pickaxe: {good}Started competition {theme}{name}{muted}."
+  competition-stopped: "{prefix}:redstone: {bad}Stopped the active competition."
   no-active-competition: "{prefix}{bad}There is no active competition."
-  set-next: "{prefix}{good}Queued {theme}{id}{muted} as next competition."
-  editor-opened: "{prefix}{good}Opened editor."
+  set-next: "{prefix}:clock: {good}Queued {theme}{id}{muted} as next competition."
+  editor-opened: "{prefix}:book: {good}Opened editor."
   prompt-cancelled: "{prefix}{bad}Editor prompt cancelled."
-  edit-saved: "{prefix}{good}Saved changes for {theme}{id}{muted}."
-  invalid-value: "{prefix}{bad}Invalid value: {theme}{value}"
-  version: "{prefix}{theme}Version {version} {muted}| Author: {theme}Carrotio"
+  edit-saved: "{prefix}:emerald: {good}Saved changes for {theme}{id}{muted}."
+  invalid-value: "{prefix}:redstone: {bad}Invalid value: {theme}{value}"
 
   help-header: "{prefix}{muted}Commands:"
   help-help: "{prefix}{theme}/fominingcomp help {muted}- Show this help"
-  help-version: "{prefix}{theme}/fominingcomp version {muted}- Show author and plugin version"
+  help-version: "{prefix}{theme}/fominingcomp version {muted}- Check for updates"
   help-editor: "{prefix}{theme}/fominingcomp editor {muted}- Open GUI editor"
   help-reload: "{prefix}{theme}/fominingcomp reload {muted}- Reload config and messages"
   help-start: "{prefix}{theme}/fominingcomp start <id> {muted}- Start competition now"

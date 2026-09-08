@@ -116,6 +116,7 @@ public final class EditorGui implements Listener {
             entries.add(EntryBrowserRequest.Entry.of(
                 competition.id(),
                 actionItem(
+                    player,
                     competition.icon(),
                     FoStyle.THEME + competition.displayName(),
                     List.of(
@@ -137,12 +138,13 @@ public final class EditorGui implements Listener {
             .filter(normalizedFilter)
             .buttons(BUTTONS)
             .extraButton(actionItem(
+                player,
                 toggleMaterial(manager.broadcastWhatToMineEnabled()),
                 FoStyle.THEME + "Broadcast What To Mine",
                 List.of("&fGlobal setting", "&fCurrent: " + (manager.broadcastWhatToMineEnabled() ? "enabled" : "disabled"), "", "&fClick to toggle."),
                 "toggle_broadcast_what_to_mine", "", 0
             ))
-            .addButton(actionItem(Material.ANVIL, FoStyle.GOOD + "Create Competition",
+            .addButton(actionItem(player, Material.ANVIL, FoStyle.GOOD + "Create Competition",
                 List.of("&fCreate a new competition entry.", "&fClick to enter a new ID."), "create_competition", "", 0))
             .build());
     }
@@ -175,6 +177,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             11,
             actionItem(
+                player,
                 Material.NAME_TAG,
                 FoStyle.THEME + "Display Name",
                 List.of("&fCurrent: " + competition.displayName(), "", "&fClick to edit."),
@@ -187,6 +190,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             12,
             actionItem(
+                player,
                 competition.icon(),
                 FoStyle.THEME + "Icon Material",
                 List.of("&fCurrent: " + competition.icon().name(), "", "&fClick to edit."),
@@ -199,6 +203,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             13,
             actionItem(
+                player,
                 Material.IRON_PICKAXE,
                 FoStyle.THEME + "Tracked Materials",
                 List.of(
@@ -216,6 +221,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             15,
             actionItem(
+                player,
                 Material.CLOCK,
                 FoStyle.THEME + "Duration",
                 List.of("&fCurrent: " + competition.durationSeconds() + " seconds", "", "&fClick to edit."),
@@ -228,6 +234,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             14,
             actionItem(
+                player,
                 Material.COMPASS,
                 FoStyle.THEME + "Disabled Worlds",
                 List.of(
@@ -245,6 +252,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             10,
             actionItem(
+                player,
                 toggleMaterial(competition.enabled()),
                 competition.enabled() ? FoStyle.GOOD + "Enabled" : FoStyle.BAD + "Disabled",
                 List.of("&fToggle this competition on/off."),
@@ -257,6 +265,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             16,
             actionItem(
+                player,
                 toggleMaterial(competition.bossbarEnabled()),
                 FoStyle.THEME + "BossBar",
                 List.of("&fCurrent: " + (competition.bossbarEnabled() ? "enabled" : "disabled"), "&fClick to toggle."),
@@ -269,6 +278,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             19,
             actionItem(
+                player,
                 toggleMaterial(competition.announceStart()),
                 FoStyle.THEME + "Announce Start",
                 List.of("&fCurrent: " + (competition.announceStart() ? "enabled" : "disabled"), "&fClick to toggle."),
@@ -281,6 +291,7 @@ public final class EditorGui implements Listener {
         inventory.setItem(
             20,
             actionItem(
+                player,
                 toggleMaterial(competition.announceEnd()),
                 FoStyle.THEME + "Announce End",
                 List.of("&fCurrent: " + (competition.announceEnd() ? "enabled" : "disabled"), "&fClick to toggle."),
@@ -316,6 +327,7 @@ public final class EditorGui implements Listener {
             inventory.setItem(
                 20 + rank,
                 actionItem(
+                    player,
                     rewardMaterial,
                     FoStyle.THEME + "Top " + rank + " Reward",
                     preview,
@@ -328,12 +340,7 @@ public final class EditorGui implements Listener {
 
         inventory.setItem(
             GuiSlots.bottomMiddleSlot(COMPETITION_EDITOR_ROWS),
-            actionItem(
-                BUTTONS.back(),
-                "back_to_list",
-                competition.id(),
-                0
-            )
+            BUTTONS.back(player)
         );
 
         player.openInventory(inventory);
@@ -605,6 +612,10 @@ public final class EditorGui implements Listener {
         Integer rewardRank = data.get(rankKey, PersistentDataType.INTEGER);
 
         if (action == null) {
+            if (event.getRawSlot() == GuiSlots.bottomMiddleSlot(COMPETITION_EDITOR_ROWS)) {
+                sounds.back(player);
+                openMainEditor(player);
+            }
             return;
         }
 
@@ -939,6 +950,7 @@ public final class EditorGui implements Listener {
     }
 
     private ItemStack actionItem(
+        Player player,
         Material material,
         String name,
         List<String> loreLines,
@@ -946,17 +958,12 @@ public final class EditorGui implements Listener {
         String competitionId,
         int rank
     ) {
-        ItemStack item = new ItemStack(material);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(FoText.color(name));
-            List<String> lore = loreLines.stream()
-                .map(line -> FoText.color(line.startsWith("#") || line.startsWith("&") || line.startsWith("§") ? line : FoStyle.WHITE + line))
-                .collect(Collectors.toCollection(ArrayList::new));
-            meta.setLore(lore);
-            meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
-            item.setItemMeta(meta);
-        }
+        String color = name.contains(FoStyle.BAD) ? FoStyle.BAD : name.contains(FoStyle.GOOD) ? FoStyle.GOOD : FoStyle.THEME;
+        String label = FoText.plain(FoText.color(name));
+        List<String> information = loreLines.stream()
+                .map(line -> line.startsWith("#") || line.startsWith("&") || line.startsWith("§") ? line : FoStyle.WHITE + line)
+                .toList();
+        ItemStack item = EditorItemFactory.button(player, material, color, label, information, action.replace('_', ' '));
         return actionItem(item, action, competitionId, rank);
     }
 

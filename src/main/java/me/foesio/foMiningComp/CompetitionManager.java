@@ -15,9 +15,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import me.foesio.core.command.CommandPlaceholders;
+import me.foesio.core.dialog.DialogIcons;
 import me.foesio.core.material.MaterialTypes;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.text.FoText;
+import net.kyori.adventure.audience.Audience;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
@@ -58,6 +60,7 @@ public final class CompetitionManager implements Listener {
 
     private BukkitTask tickerTask;
     private BossBar bossBar;
+    private final Map<UUID, net.kyori.adventure.bossbar.BossBar> componentBossBars;
 
     private List<ResultEntry> lastResults;
 
@@ -65,6 +68,7 @@ public final class CompetitionManager implements Listener {
         this.plugin = plugin;
         this.messages = messages;
         this.competitions = new LinkedHashMap<>();
+        this.componentBossBars = new HashMap<>();
         this.nextStartAtMillis = -1L;
         this.lastResults = new ArrayList<>();
     }
@@ -439,7 +443,10 @@ public final class CompetitionManager implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         if (bossBar != null) {
-            bossBar.addPlayer(event.getPlayer());
+            if (!showComponentBossBar(event.getPlayer())) {
+                bossBar.addPlayer(event.getPlayer());
+            }
+            updateBossBar();
         }
     }
 
@@ -447,6 +454,10 @@ public final class CompetitionManager implements Listener {
     public void onQuit(PlayerQuitEvent event) {
         if (bossBar != null) {
             bossBar.removePlayer(event.getPlayer());
+        }
+        net.kyori.adventure.bossbar.BossBar componentBossBar = componentBossBars.remove(event.getPlayer().getUniqueId());
+        if (componentBossBar != null && event.getPlayer() instanceof Audience audience) {
+            audience.hideBossBar(componentBossBar);
         }
     }
 
@@ -547,7 +558,7 @@ public final class CompetitionManager implements Listener {
 
             for (int i = 0; i < Math.min(5, results.size()); i++) {
                 ResultEntry entry = results.get(i);
-                String line = messages.render(
+                broadcast(
                     "messages.leaderboard-entry",
                     "{prefix}{muted}#{rank} {theme}{player} {muted}- {theme}{score}",
                     Map.of(
@@ -556,7 +567,6 @@ public final class CompetitionManager implements Listener {
                         "score", String.valueOf(entry.score())
                     )
                 );
-                Bukkit.broadcastMessage(line);
             }
         }
 
@@ -724,7 +734,9 @@ public final class CompetitionManager implements Listener {
 
         bossBar = Bukkit.createBossBar("", BarColor.GREEN, BarStyle.SEGMENTED_10);
         for (Player player : Bukkit.getOnlinePlayers()) {
-            bossBar.addPlayer(player);
+            if (!showComponentBossBar(player)) {
+                bossBar.addPlayer(player);
+            }
         }
         updateBossBar();
     }
@@ -750,12 +762,60 @@ public final class CompetitionManager implements Listener {
         placeholders.put("name", activeCompetition.config.displayName());
         placeholders.put("time", formatDuration(remaining));
         bossBar.setTitle(messages.renderTemplate(titleTemplate, placeholders));
+
+        float componentProgress = (float) Math.max(0.0D, Math.min(1.0D, progress));
+        for (Map.Entry<UUID, net.kyori.adventure.bossbar.BossBar> entry : componentBossBars.entrySet()) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            if (player == null) {
+                continue;
+            }
+            try {
+                entry.getValue()
+                    .progress(componentProgress)
+                    .name(DialogIcons.render(
+                        player,
+                        messages.renderTemplateForViewer(player, titleTemplate, placeholders)
+                    ));
+            } catch (RuntimeException | LinkageError exception) {
+                plugin.getLogger().fine("Could not update component bossbar for " + player.getName()
+                    + ": " + exception.getMessage());
+            }
+        }
     }
 
     private void destroyBossBar() {
+        for (Map.Entry<UUID, net.kyori.adventure.bossbar.BossBar> entry : componentBossBars.entrySet()) {
+            Player player = Bukkit.getPlayer(entry.getKey());
+            if (player instanceof Audience audience) {
+                audience.hideBossBar(entry.getValue());
+            }
+        }
+        componentBossBars.clear();
         if (bossBar != null) {
             bossBar.removeAll();
             bossBar = null;
+        }
+    }
+
+    private boolean showComponentBossBar(Player player) {
+        try {
+            if (!(player instanceof Audience audience)) {
+                return false;
+            }
+            net.kyori.adventure.bossbar.BossBar componentBossBar =
+                net.kyori.adventure.bossbar.BossBar.bossBar(
+                    net.kyori.adventure.text.Component.empty(),
+                    1.0F,
+                    net.kyori.adventure.bossbar.BossBar.Color.GREEN,
+                    net.kyori.adventure.bossbar.BossBar.Overlay.NOTCHED_10
+                );
+            componentBossBars.put(player.getUniqueId(), componentBossBar);
+            audience.showBossBar(componentBossBar);
+            return true;
+        } catch (RuntimeException | LinkageError exception) {
+            componentBossBars.remove(player.getUniqueId());
+            plugin.getLogger().fine("Component bossbars are unavailable: " + exception.getMessage());
+            return false;
         }
     }
 
@@ -812,13 +872,22 @@ public final class CompetitionManager implements Listener {
 
     private String formatMaterials(Set<Material> materials) {
         return materials.stream()
-            .map(Material::name)
-            .sorted()
+            .sorted((left, right) -> MaterialTypes.displayName(left).compareToIgnoreCase(MaterialTypes.displayName(right)))
+            .map(this::formatMaterial)
             .collect(Collectors.joining(", "));
     }
 
+    private String formatMaterial(Material material) {
+        String label = MaterialTypes.displayName(material);
+        String sprite = DialogIcons.token(material);
+        return sprite.isBlank() ? label : sprite + " " + label;
+    }
+
     private void broadcast(String path, String fallback, Map<String, String> placeholders) {
-        Bukkit.broadcastMessage(messages.render(path, fallback, placeholders));
+        Bukkit.getConsoleSender().sendMessage(messages.render(path, fallback, placeholders));
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            messages.send(player, path, fallback, placeholders);
+        }
     }
 
     private File competitionFolder() {
