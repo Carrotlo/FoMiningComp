@@ -67,15 +67,7 @@ Main config areas: `settings`.
 <details>
 <summary><strong>Developer API</strong></summary>
 
-The public types are in `me.foesio.foMiningComp.api`. This checkout uses Java 21,
-`plugin.yml`, and Bukkit's service registry. Compile against the **FoMiningComp
-jar** as a provided dependency; do not shade a second copy of its API into your
-plugin. The Maven coordinates below come from this project's `pom.xml`; install
-the built jar locally first if you do not have a repository containing it:
-
-```sh
-mvn install:install-file -Dfile=/path/to/FoMiningComp-2.0.jar -DgroupId=me.foesio -DartifactId=FoMiningComp -Dversion=2.0 -Dpackaging=jar
-```
+Compile against the matching jar (`provided` in Maven, `compileOnly` in Gradle); install it locally if needed. Declare `FoMiningComp` in your plugin metadata (`softdepend` for an optional integration).
 
 ```xml
 <dependency>
@@ -86,134 +78,27 @@ mvn install:install-file -Dfile=/path/to/FoMiningComp-2.0.jar -DgroupId=me.foesi
 </dependency>
 ```
 
-For an optional `plugin.yml` consumer, use `softdepend: [FoMiningComp]` and keep
-all direct FoMiningComp class references in a separate integration class that
-you load only after checking `getPlugin("FoMiningComp")` is enabled. Use `depend`
-instead if your plugin cannot run without FoMiningComp. Reacquire the service
-after a disable/enable; a cached service is invalid after disable.
-
 ```java
-// Put this in a separate class loaded only when FoMiningComp is enabled.
-public final class MiningIntegration {
-    public static ActionResult award(Player player) {
-        FoMiningCompApi api = Bukkit.getServicesManager().load(FoMiningCompApi.class);
-        if (api == null) return ActionResult.PROVIDER_DISABLED;
-        api.activeCompetition().ifPresent(active ->
-            Bukkit.getLogger().info("Mining competition: " + active.displayName()));
-        return api.awardScore(player.getUniqueId(), Material.DIAMOND_ORE,
-            player.getWorld().getName(), 1);
-    }
-}
-```
+import me.foesio.foMiningComp.api.FoMiningCompApi;
+import me.foesio.foMiningComp.api.MiningCompetitionCompletedEvent;
 
-### Service contract
+FoMiningCompApi api = Bukkit.getServicesManager().load(FoMiningCompApi.class);
+if (api != null) api.activeCompetition();
 
-All service methods must run on the Bukkit main server thread. Off-thread calls
-throw `IllegalStateException`. Read methods also throw after the provider is
-disabled; action methods return `PROVIDER_DISABLED`. The service is registered
-after competition data and commands load, and unregistered during disable.
-These methods do not apply a player's `fominingcomp.admin` permission: only
-trusted server plugins can call them, and the caller decides who may invoke its
-own controls.
-
-- `activeCompetition()` is empty while idle; otherwise it contains the live ID,
-  display name, and Unix-millisecond start/end timestamps. The older
-  `isCompetitionActive()` and `activeCompetitionId()` methods remain available;
-  the latter returns `"none"` while idle.
-- `nextCompetition()` is empty if no candidate is known. It returns a queued or
-  scheduled ID; `startsAtMillis == -1` means no automatic start time is known,
-  including while a competition is active or auto-start is disabled.
-- `competitions()` returns immutable snapshots of the currently loaded
-  definitions. Nested material/world sets and reward-command lists are copied.
-  Editor changes persist to YAML; an existing snapshot never changes.
-- `playerScore()` and `playerRank()` return zero while idle or before a player
-  scores. Equal scores share a live rank. `liveStandings()` is a descending,
-  immutable snapshot of current scored players; tie ordering is unspecified.
-  Final reward placements use sequential positions. Scores and live timers are
-  memory-only and are not restored after restart.
-- `startCompetition(id)` accepts an enabled definition. If another competition
-  runs, it completes first with reason `REPLACED`. `stopCompetition()` completes
-  the active one with reason `API_STOP`; configured reward commands still run.
-  `queueNext(id)` selects an enabled definition; auto-start must be enabled for
-  it to start automatically. These methods return
-  `ActionResult`, including `NOT_FOUND`, `DISABLED`, `NO_ACTIVE_COMPETITION`,
-  `CANCELLED`, `BUSY`, and `INVALID_INPUT`. A cancelled idle start may advance
-  the normal automatic schedule as described below.
-- `awardScore(playerId, material, worldName, amount)` credits a positive amount
-  only while active, when the material is tracked and the named world is
-  not disabled. It accepts an offline player UUID and trusts the calling plugin
-  to report a real mining action. Invalid, ineligible, and overflowing requests
-  do not change the score. It uses the same scoring rules as normal block breaks.
-
-### Events
-
-Register a Bukkit listener normally; the provider's `plugin.yml` classloader
-must be available when the listener class loads. Events are dispatched from the
-same server thread as the command or scheduler transition. They are synchronous,
-non-async Bukkit events; do not invoke the service from an async worker. This
-plugin uses Bukkit's standard scheduler and does not promise Folia region-thread
-compatibility.
-
-```java
 @EventHandler
-public void onMiningEnd(MiningCompetitionCompletedEvent event) {
-    if (event.getReason() != CompletionReason.TIME_EXPIRED) return;
-    for (MiningCompetitionCompletedEvent.Placement placement : event.getPlacements()) {
-        // Give an independent bonus using placement.playerId(), score(), rank().
-    }
+public void onMiningCompetitionCompletedEvent(MiningCompetitionCompletedEvent event) {
+    Bukkit.getLogger().info(event.getClass().getSimpleName());
 }
 ```
 
-- `MiningCompetitionPreStartEvent` fires only for a known, enabled definition,
-  before an active competition is replaced or new state is set. Cancelling it
-  leaves an active competition untouched. If the rejected candidate was due to
-  start while idle with auto-start enabled, it is skipped and the next enabled
-  competition is scheduled after the normal interval. A separate candidate
-  already scheduled by an admin is left in place. With auto-start disabled, no
-  automatic start follows.
-  The event provides ID, display name, and `StartCause` (`SCHEDULED`, `COMMAND`,
-  `API`). No start or completion event is emitted for a cancelled start.
-- `MiningCompetitionStartedEvent` fires after the new competition becomes active
-  and its bossbar is created, before start broadcasts and sounds. It contains
-  the ID, name, cause, and Unix-millisecond start/end timestamps. It cannot be
-  cancelled.
-- `MiningCompetitionCompletedEvent` fires after final placements are calculated
-  and configured reward commands have been attempted, before scheduling the next
-  competition. It also fires for early ends: `MANUAL_STOP`, `API_STOP`,
-  `REPLACED`, `DISABLED`, and `RELOADED`. `TIME_EXPIRED` marks a natural finish.
-  Placements are immutable and the event cannot change existing payouts. The
-  three-argument constructor remains for binary compatibility and sets reason
-  `UNKNOWN`; FoMiningComp itself always supplies a specific reason. Plugin
-  disable only shuts down the ticker and bossbar; it does not finalize the
-  active competition or emit this event.
+**API methods** (overloads grouped):
 
-### Complete public API method index
+- `FoMiningCompApi`: `isCompetitionActive`, `activeCompetitionId`, `activeCompetition`, `nextCompetition`, `competitions`, `playerScore`, `playerRank`, `liveStandings`, `startCompetition`, `stopCompetition`, `queueNext`, `awardScore`.
 
-Signatures use short type names; import Fo types from this plugin's `api` package and Bukkit types from Bukkit.
+**Other API types:** `ActionResult`, `ActiveCompetitionSnapshot`, `CompetitionDefinition`, `CompletionReason`, `LiveStanding`, `NextCompetitionSnapshot`, `StartCause`.
 
-#### `FoMiningCompApi`
+**Events:** `MiningCompetitionCompletedEvent`, `MiningCompetitionPreStartEvent`, `MiningCompetitionStartedEvent`.
 
-```java
-boolean isCompetitionActive();
-String activeCompetitionId();
-Optional<ActiveCompetitionSnapshot> activeCompetition();
-Optional<NextCompetitionSnapshot> nextCompetition();
-List<CompetitionDefinition> competitions();
-int playerScore(UUID);
-int playerRank(UUID);
-List<LiveStanding> liveStandings();
-ActionResult startCompetition(String);
-ActionResult stopCompetition();
-ActionResult queueNext(String);
-ActionResult awardScore(UUID, Material, String, int);
-```
-
-**Other public contract types:** `ActionResult`, `ActiveCompetitionSnapshot`, `CompetitionDefinition`, `CompletionReason`, `LiveStanding`, `NextCompetitionSnapshot`, `StartCause`.
-
-### Complete Bukkit event index
-
-- `MiningCompetitionCompletedEvent`.
-- `MiningCompetitionPreStartEvent`.
-- `MiningCompetitionStartedEvent`.
+[Browse API source](src/main/java/me/foesio/foMiningComp/api) for signatures and event details.
 
 </details>
