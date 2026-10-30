@@ -23,6 +23,8 @@ messages:
   usage-start: "{prefix}{bad}Usage: {theme}/{label} start <id>"
   usage-setnext: "{prefix}{bad}Usage: {theme}/{label} setnext <id>"
   competition-not-found: "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled."
+  competition-start-skipped: "{prefix}{bad}Competition {theme}{id}{bad} was skipped by another plugin."
+  competition-start-busy: "{prefix}{bad}A competition start is already being processed."
   competition-started: "{prefix}:diamond_pickaxe: {good}Started competition {theme}{name}{muted}."
   competition-stopped: "{prefix}:redstone: {bad}Stopped the active competition."
   no-active-competition: "{prefix}{bad}There is no active competition."

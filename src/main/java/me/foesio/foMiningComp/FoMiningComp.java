@@ -19,11 +19,13 @@ import me.foesio.core.sound.FoAdminSounds;
 import me.foesio.core.sound.FoEditorSounds;
 import me.foesio.core.sound.FoSoundService;
 import me.foesio.core.update.UpdateNoticeService;
+import me.foesio.foMiningComp.api.FoMiningCompApi;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.ServicePriority;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class FoMiningComp extends JavaPlugin {
@@ -40,6 +42,7 @@ public final class FoMiningComp extends JavaPlugin {
     private FoSoundService sounds;
     private FoAdminSounds adminSounds;
     private FoEditorSounds editorSounds;
+    private FoMiningCompApi api;
 
     @Override
     public void onEnable() {
@@ -61,12 +64,18 @@ public final class FoMiningComp extends JavaPlugin {
         registerCommands();
         registerCommandVisibility();
         hookPlaceholderApi();
+        api = new FoMiningCompApiImpl(this, competitionManager);
+        getServer().getServicesManager().register(FoMiningCompApi.class, api, this, ServicePriority.Normal);
 
         getLogger().info("FoMiningComp enabled.");
     }
 
     @Override
     public void onDisable() {
+        if (api != null) {
+            getServer().getServicesManager().unregister(FoMiningCompApi.class, api);
+            api = null;
+        }
         if (competitionManager != null) {
             competitionManager.shutdown();
         }

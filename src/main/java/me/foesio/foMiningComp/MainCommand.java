@@ -9,6 +9,8 @@ import java.util.stream.Collectors;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.reload.FoReloadResult;
 import me.foesio.core.update.UpdateNoticeService;
+import me.foesio.foMiningComp.api.ActionResult;
+import me.foesio.foMiningComp.api.StartCause;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -87,9 +89,18 @@ public final class MainCommand implements CommandExecutor, TabCompleter {
                 }
 
                 String id = args[1];
-                if (!manager.startCompetition(id, sender)) {
+                ActionResult startResult = manager.requestStartCompetition(id, sender, StartCause.COMMAND);
+                if (startResult != ActionResult.SUCCESS) {
                     plugin.adminSounds().updateError(sender);
-                    messages.send(sender, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", id));
+                    if (startResult == ActionResult.CANCELLED) {
+                        messages.send(sender, "messages.competition-start-skipped",
+                            "{prefix}{bad}Competition {theme}{id}{bad} was skipped by another plugin.", Map.of("id", id));
+                    } else if (startResult == ActionResult.BUSY) {
+                        messages.send(sender, "messages.competition-start-busy",
+                            "{prefix}{bad}A competition start is already being processed.");
+                    } else {
+                        messages.send(sender, "messages.competition-not-found", "{prefix}{bad}Competition {theme}{id}{bad} was not found or is disabled.", Map.of("id", id));
+                    }
                 }
                 return true;
             }

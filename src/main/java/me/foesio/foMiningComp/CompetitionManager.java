@@ -13,12 +13,23 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 import me.foesio.core.command.CommandPlaceholders;
 import me.foesio.core.dialog.DialogIcons;
 import me.foesio.core.material.MaterialTypes;
 import me.foesio.core.message.FoMessageService;
 import me.foesio.core.text.FoText;
+import me.foesio.foMiningComp.api.ActionResult;
+import me.foesio.foMiningComp.api.ActiveCompetitionSnapshot;
+import me.foesio.foMiningComp.api.CompetitionDefinition;
+import me.foesio.foMiningComp.api.CompletionReason;
+import me.foesio.foMiningComp.api.LiveStanding;
+import me.foesio.foMiningComp.api.MiningCompetitionCompletedEvent;
+import me.foesio.foMiningComp.api.MiningCompetitionPreStartEvent;
+import me.foesio.foMiningComp.api.MiningCompetitionStartedEvent;
+import me.foesio.foMiningComp.api.NextCompetitionSnapshot;
+import me.foesio.foMiningComp.api.StartCause;
 import net.kyori.adventure.audience.Audience;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -63,6 +74,7 @@ public final class CompetitionManager implements Listener {
     private final Map<UUID, net.kyori.adventure.bossbar.BossBar> componentBossBars;
 
     private List<ResultEntry> lastResults;
+    private boolean startRequestInProgress;
 
     public CompetitionManager(FoMiningComp plugin, FoMessageService messages) {
         this.plugin = plugin;
@@ -75,7 +87,7 @@ public final class CompetitionManager implements Listener {
 
     public void loadFromConfig() {
         if (activeCompetition != null) {
-            endActiveCompetition(true, null);
+            endActiveCompetition(CompletionReason.RELOADED, null);
         }
 
         competitions.clear();
@@ -147,7 +159,8 @@ public final class CompetitionManager implements Listener {
         if (scheduledNextCompetitionId == null) {
             scheduledNextCompetitionId = chooseNextCompetitionId();
             if (scheduledNextCompetitionId != null) {
-                nextStartAtMillis = System.currentTimeMillis() + (initialDelaySeconds * 1000L);
+                nextStartAtMillis = autoStart
+                    ? System.currentTimeMillis() + (initialDelaySeconds * 1000L) : -1L;
             }
         }
 
@@ -155,65 +168,125 @@ public final class CompetitionManager implements Listener {
     }
 
     public boolean startCompetition(String id, CommandSender sender) {
+        return requestStartCompetition(id, sender, StartCause.COMMAND) == ActionResult.SUCCESS;
+    }
+
+    public ActionResult requestStartCompetition(String id, CommandSender sender, StartCause cause) {
+        if (id == null || id.isBlank() || cause == null) {
+            return ActionResult.INVALID_INPUT;
+        }
+        if (startRequestInProgress) {
+            return ActionResult.BUSY;
+        }
         CompetitionConfig config = competition(id);
-        if (config == null || !config.enabled()) {
-            return false;
+        if (config == null) {
+            return ActionResult.NOT_FOUND;
+        }
+        if (!config.enabled()) {
+            return ActionResult.DISABLED;
         }
 
-        if (activeCompetition != null) {
-            endActiveCompetition(true, null);
+        startRequestInProgress = true;
+        try {
+            MiningCompetitionPreStartEvent preStart = new MiningCompetitionPreStartEvent(
+                config.id(), config.displayName(), cause);
+            Bukkit.getPluginManager().callEvent(preStart);
+            if (preStart.isCancelled()) {
+                if (activeCompetition == null && autoStart
+                    && (cause == StartCause.SCHEDULED || scheduledNextCompetitionId == null
+                        || scheduledNextCompetitionId.equalsIgnoreCase(config.id()))) {
+                    skipCompetition(config.id());
+                }
+                return ActionResult.CANCELLED;
+            }
+            if (competition(config.id()) != config || !config.enabled()) {
+                return ActionResult.DISABLED;
+            }
+
+            if (activeCompetition != null) {
+                endActiveCompetition(CompletionReason.REPLACED, null);
+            }
+
+            long now = System.currentTimeMillis();
+            activeCompetition = new ActiveCompetition(config, now, now + (config.durationSeconds() * 1000L));
+
+            lastCompetitionId = config.id();
+            if (queuedNextCompetitionId != null && queuedNextCompetitionId.equalsIgnoreCase(config.id())) {
+                queuedNextCompetitionId = null;
+            }
+            scheduledNextCompetitionId = null;
+            nextStartAtMillis = -1L;
+
+            createBossBarIfNeeded(config);
+            ActiveCompetition started = activeCompetition;
+            Bukkit.getPluginManager().callEvent(new MiningCompetitionStartedEvent(
+                config.id(), config.displayName(), cause, now, activeCompetition.endsAtMillis));
+            if (activeCompetition != started) {
+                return ActionResult.SUCCESS;
+            }
+
+            if (config.announceStart()) {
+                Map<String, String> placeholders = new HashMap<>();
+                placeholders.put("id", config.id());
+                placeholders.put("name", config.displayName());
+                placeholders.put("duration", formatDuration(config.durationSeconds()));
+                broadcast("messages.broadcast-start", "{prefix}{theme}Competition {name}{muted} started. Time: {theme}{duration}", placeholders);
+            }
+
+            if (broadcastWhatToMineEnabled) {
+                Map<String, String> placeholders = new HashMap<>();
+                placeholders.put("id", config.id());
+                placeholders.put("name", config.displayName());
+                placeholders.put("materials", formatMaterials(config.trackedMaterials()));
+                broadcast("messages.broadcast-what-to-mine", "{prefix}{muted}Mine these blocks: {theme}{materials}", placeholders);
+            }
+
+            if (sender != null) {
+                messages.send(sender, "messages.competition-started", "{prefix}{good}Started competition {theme}{name}{muted}.", Map.of("name", config.displayName()));
+            }
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                plugin.sounds().play(player, "competition.start");
+            }
+            return ActionResult.SUCCESS;
+        } finally {
+            startRequestInProgress = false;
         }
-
-        long now = System.currentTimeMillis();
-        activeCompetition = new ActiveCompetition(config, now, now + (config.durationSeconds() * 1000L));
-
-        lastCompetitionId = config.id();
-        scheduledNextCompetitionId = null;
-        nextStartAtMillis = -1L;
-
-        createBossBarIfNeeded(config);
-
-        if (config.announceStart()) {
-            Map<String, String> placeholders = new HashMap<>();
-            placeholders.put("id", config.id());
-            placeholders.put("name", config.displayName());
-            placeholders.put("duration", formatDuration(config.durationSeconds()));
-            broadcast("messages.broadcast-start", "{prefix}{theme}Competition {name}{muted} started. Time: {theme}{duration}", placeholders);
-        }
-
-        if (broadcastWhatToMineEnabled) {
-            Map<String, String> placeholders = new HashMap<>();
-            placeholders.put("id", config.id());
-            placeholders.put("name", config.displayName());
-            placeholders.put("materials", formatMaterials(config.trackedMaterials()));
-            broadcast("messages.broadcast-what-to-mine", "{prefix}{muted}Mine these blocks: {theme}{materials}", placeholders);
-        }
-
-        if (sender != null) {
-            messages.send(sender, "messages.competition-started", "{prefix}{good}Started competition {theme}{name}{muted}.", Map.of("name", config.displayName()));
-        }
-        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
-            plugin.sounds().play(player, "competition.start");
-        }
-        return true;
     }
 
     public boolean stopCompetition(CommandSender sender) {
-        return endActiveCompetition(true, sender);
+        return requestStopCompetition(CompletionReason.MANUAL_STOP, sender) == ActionResult.SUCCESS;
+    }
+
+    public ActionResult requestStopCompetition(CompletionReason reason, CommandSender sender) {
+        if (reason == null) {
+            return ActionResult.INVALID_INPUT;
+        }
+        return endActiveCompetition(reason, sender) ? ActionResult.SUCCESS : ActionResult.NO_ACTIVE_COMPETITION;
     }
 
     public boolean queueNext(String id) {
+        return requestQueueNext(id) == ActionResult.SUCCESS;
+    }
+
+    public ActionResult requestQueueNext(String id) {
+        if (id == null || id.isBlank()) {
+            return ActionResult.INVALID_INPUT;
+        }
         CompetitionConfig config = competition(id);
-        if (config == null || !config.enabled()) {
-            return false;
+        if (config == null) {
+            return ActionResult.NOT_FOUND;
+        }
+        if (!config.enabled()) {
+            return ActionResult.DISABLED;
         }
 
         queuedNextCompetitionId = config.id();
         if (activeCompetition == null) {
             scheduledNextCompetitionId = queuedNextCompetitionId;
-            nextStartAtMillis = System.currentTimeMillis() + (intervalBetweenCompetitionsSeconds * 1000L);
+            nextStartAtMillis = autoStart
+                ? System.currentTimeMillis() + (intervalBetweenCompetitionsSeconds * 1000L) : -1L;
         }
-        return true;
+        return ActionResult.SUCCESS;
     }
 
     public boolean hasActiveCompetition() {
@@ -285,6 +358,79 @@ public final class CompetitionManager implements Listener {
         }
 
         return source.get(rank - 1);
+    }
+
+    public ActiveCompetitionSnapshot activeSnapshot() {
+        ActiveCompetition running = activeCompetition;
+        return running == null ? null : new ActiveCompetitionSnapshot(
+            running.config.id(), running.config.displayName(), running.startsAtMillis, running.endsAtMillis);
+    }
+
+    public NextCompetitionSnapshot nextSnapshot() {
+        if (queuedNextCompetitionId != null && (activeCompetition != null || scheduledNextCompetitionId == null)) {
+            return new NextCompetitionSnapshot(queuedNextCompetitionId, -1L);
+        }
+        if (scheduledNextCompetitionId == null) {
+            return null;
+        }
+        return new NextCompetitionSnapshot(scheduledNextCompetitionId,
+            autoStart && activeCompetition == null ? nextStartAtMillis : -1L);
+    }
+
+    public List<CompetitionDefinition> competitionDefinitions() {
+        return competitions.values().stream()
+            .map(config -> new CompetitionDefinition(config.id(), config.displayName(), config.icon(),
+                config.enabled(), config.durationSeconds(), config.trackedMaterials(), config.disabledWorlds(),
+                config.announceStart(), config.announceEnd(), config.bossbarEnabled(), rewardSnapshot(config)))
+            .toList();
+    }
+
+    private Map<Integer, List<String>> rewardSnapshot(CompetitionConfig config) {
+        Map<Integer, List<String>> commands = new LinkedHashMap<>();
+        for (int rank = 1; rank <= 5; rank++) {
+            commands.put(rank, config.rewardCommands(rank));
+        }
+        return commands;
+    }
+
+    public List<LiveStanding> liveStandings() {
+        ActiveCompetition running = activeCompetition;
+        if (running == null) {
+            return List.of();
+        }
+        List<ResultEntry> results = buildResults(running.scores);
+        List<LiveStanding> standings = new ArrayList<>(results.size());
+        int previousScore = -1;
+        int sharedRank = 0;
+        for (int i = 0; i < results.size(); i++) {
+            ResultEntry entry = results.get(i);
+            if (entry.score() != previousScore) {
+                sharedRank = i + 1;
+                previousScore = entry.score();
+            }
+            standings.add(new LiveStanding(entry.uuid(), entry.name(), entry.score(), sharedRank));
+        }
+        return List.copyOf(standings);
+    }
+
+    public ActionResult awardScore(UUID playerId, Material material, String worldName, int amount) {
+        if (playerId == null || material == null || worldName == null || worldName.isBlank() || amount <= 0) {
+            return ActionResult.INVALID_INPUT;
+        }
+        ActiveCompetition running = activeCompetition;
+        if (running == null) {
+            return ActionResult.NO_ACTIVE_COMPETITION;
+        }
+        if (!running.config.trackedMaterials().contains(material)
+            || running.config.disabledWorlds().contains(worldName.trim().toLowerCase(Locale.ROOT))) {
+            return ActionResult.INELIGIBLE;
+        }
+        int previous = running.scores.getOrDefault(playerId, 0);
+        if (previous > Integer.MAX_VALUE - amount) {
+            return ActionResult.OVERFLOW;
+        }
+        running.scores.put(playerId, previous + amount);
+        return ActionResult.SUCCESS;
     }
 
     public String formatDuration(long seconds) {
@@ -369,7 +515,11 @@ public final class CompetitionManager implements Listener {
         saveCompetitionFile(config);
 
         if (!enabled && activeCompetition != null && activeCompetition.config.id().equalsIgnoreCase(config.id())) {
-            endActiveCompetition(true, null);
+            endActiveCompetition(CompletionReason.DISABLED, null);
+        }
+        if (!enabled && scheduledNextCompetitionId != null
+            && scheduledNextCompetitionId.equalsIgnoreCase(config.id())) {
+            skipCompetition(config.id());
         }
 
         return true;
@@ -437,7 +587,7 @@ public final class CompetitionManager implements Listener {
             return;
         }
 
-        running.scores.merge(event.getPlayer().getUniqueId(), 1, Integer::sum);
+        awardScore(event.getPlayer().getUniqueId(), event.getBlock().getType(), event.getBlock().getWorld().getName(), 1);
     }
 
     @EventHandler
@@ -465,7 +615,7 @@ public final class CompetitionManager implements Listener {
         if (activeCompetition != null) {
             updateBossBar();
             if (System.currentTimeMillis() >= activeCompetition.endsAtMillis) {
-                endActiveCompetition(false, null);
+                endActiveCompetition(CompletionReason.TIME_EXPIRED, null);
             }
             return;
         }
@@ -487,7 +637,26 @@ public final class CompetitionManager implements Listener {
         }
 
         if (System.currentTimeMillis() >= nextStartAtMillis) {
-            startCompetition(scheduledNextCompetitionId, null);
+            String candidate = scheduledNextCompetitionId;
+            ActionResult result = requestStartCompetition(candidate, null, StartCause.SCHEDULED);
+            if (result == ActionResult.NOT_FOUND || result == ActionResult.DISABLED) {
+                skipCompetition(candidate);
+            }
+        }
+    }
+
+    private void skipCompetition(String id) {
+        lastCompetitionId = id;
+        if (queuedNextCompetitionId != null && queuedNextCompetitionId.equalsIgnoreCase(id)) {
+            queuedNextCompetitionId = null;
+        }
+        scheduledNextCompetitionId = null;
+        nextStartAtMillis = -1L;
+        if (autoStart) {
+            scheduledNextCompetitionId = chooseNextCompetitionId();
+            if (scheduledNextCompetitionId != null) {
+                nextStartAtMillis = System.currentTimeMillis() + (intervalBetweenCompetitionsSeconds * 1000L);
+            }
         }
     }
 
@@ -532,7 +701,7 @@ public final class CompetitionManager implements Listener {
         return config;
     }
 
-    private boolean endActiveCompetition(boolean manual, CommandSender sender) {
+    private boolean endActiveCompetition(CompletionReason reason, CommandSender sender) {
         if (activeCompetition == null) {
             if (sender != null) {
                 plugin.adminSounds().updateError(sender);
@@ -549,7 +718,7 @@ public final class CompetitionManager implements Listener {
         List<ResultEntry> results = buildResults(finished.scores);
         lastResults = results;
 
-        if (finished.config.announceEnd() && !manual) {
+        if (finished.config.announceEnd() && reason == CompletionReason.TIME_EXPIRED) {
             Map<String, String> placeholders = new HashMap<>();
             placeholders.put("id", finished.config.id());
             placeholders.put("name", finished.config.displayName());
@@ -571,6 +740,7 @@ public final class CompetitionManager implements Listener {
         }
 
         executeRewards(finished.config, results);
+        publishCompletedEvent(finished.config, results, reason);
         for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
             plugin.sounds().play(player, "competition.end");
         }
@@ -581,7 +751,8 @@ public final class CompetitionManager implements Listener {
             }
         }
 
-        if (autoStart) {
+        if (autoStart && activeCompetition == null && reason != CompletionReason.REPLACED
+            && reason != CompletionReason.RELOADED) {
             scheduledNextCompetitionId = chooseNextCompetitionId();
             if (scheduledNextCompetitionId != null) {
                 nextStartAtMillis = System.currentTimeMillis() + (intervalBetweenCompetitionsSeconds * 1000L);
@@ -634,9 +805,27 @@ public final class CompetitionManager implements Listener {
                     "competition_id", config.id(),
                     "competition_name", FoText.color(config.displayName())
                 ));
-                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsed);
+                try {
+                    if (!Bukkit.dispatchCommand(Bukkit.getConsoleSender(), parsed)) {
+                        plugin.getLogger().warning("Competition reward command was unknown or rejected: " + parsed);
+                    }
+                } catch (RuntimeException exception) {
+                    plugin.getLogger().log(Level.WARNING,
+                        "Competition reward command failed for competition '" + config.id()
+                            + "', rank " + rank + ".",
+                        exception);
+                }
             }
         }
+    }
+
+    private void publishCompletedEvent(CompetitionConfig config, List<ResultEntry> results, CompletionReason reason) {
+        List<MiningCompetitionCompletedEvent.Placement> placements = results.stream()
+            .map(result -> new MiningCompetitionCompletedEvent.Placement(
+                result.uuid(), result.name(), result.score(), result.rank()))
+            .toList();
+        Bukkit.getPluginManager().callEvent(new MiningCompetitionCompletedEvent(
+            config.id(), config.displayName(), placements, reason));
     }
 
     private List<String> cleanRewardList(List<String> raw) {
